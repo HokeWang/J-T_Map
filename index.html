@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>J&amp;T 地址解析对比平台</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div>
+          <p class="eyebrow">J&amp;T Address Resolution Comparison Platform</p>
+          <h1>J&amp;T 地址解析对比平台</h1>
+          <p class="intro">导入地址文件，配置谷歌、微软、亚马逊等供应商请求，按距离阈值和厂商优先级判断最终采用哪家的经纬度。</p>
+          <div class="api-card">
+            <label for="apiKey">Google Maps JavaScript API Key</label>
+            <input id="apiKey" type="password" autocomplete="off" placeholder="用于地图展示" />
+            <label for="countryCode">country 参数</label>
+            <input id="countryCode" type="text" maxlength="2" placeholder="国家简称字母" />
+            <button id="loadMapButton" type="button">加载地图</button>
+            <p id="mapStatus" class="status-text">先加载地图，再配置地址字段和供应商。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="workflow-grid">
+        <article class="panel upload-panel">
+          <div class="panel-heading">
+            <span>1</span>
+            <div>
+              <h2>导入地址数据</h2>
+              <p>支持 CSV 或下载的 Excel 模板，第一行作为字段名。</p>
+            </div>
+          </div>
+          <input id="fileInput" type="file" accept=".csv,.xls,text/csv,application/vnd.ms-excel" />
+          <button id="templateButton" type="button" class="secondary-button">下载 Excel 导入模板</button>
+          <button id="sampleButton" type="button" class="secondary-button">载入示例数据</button>
+          <div id="fileSummary" class="summary-box">尚未导入数据。</div>
+        </article>
+
+        <article class="panel scheme-panel">
+          <div class="panel-heading">
+            <span>2</span>
+            <div>
+              <h2>配置解析规则</h2>
+              <p>维护多个地址入参方案，再配置供应商请求和对比逻辑。</p>
+            </div>
+            <button id="providerButton" type="button" class="secondary-button heading-action">配置供应商与对比逻辑</button>
+          </div>
+          <section>
+            <div class="scheme-title-row">
+              <h3>地址入参方案</h3>
+              <button id="addSchemeButton" type="button" class="secondary-button compact-button">新增入参方案</button>
+            </div>
+            <div id="schemeList" class="scheme-list empty-list">导入数据后显示字段。</div>
+            <div id="providerSummary" class="summary-box compact-summary">尚未启用可请求的供应商。</div>
+          </section>
+          <div class="run-row">
+            <label for="rowLimit">解析行数</label>
+            <input id="rowLimit" type="number" min="1" max="50" value="10" />
+            <button id="runButton" type="button" disabled>开始多供应商对比</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="results-layout">
+        <article class="panel map-panel">
+          <div class="panel-heading compact">
+            <span>3</span>
+            <div>
+              <h2>地图坐标对比</h2>
+              <p>不同供应商使用固定颜色；相同坐标合并为绿色点。</p>
+            </div>
+          </div>
+          <div class="map-legend" aria-label="地图图例">
+            <span><i class="legend-dot legend-google"></i>谷歌</span>
+            <span><i class="legend-dot legend-amazon"></i>亚马逊</span>
+            <span><i class="legend-dot legend-microsoft"></i>微软</span>
+            <span><i class="legend-dot legend-overlap"></i>相同坐标</span>
+          </div>
+          <div id="map" class="map-stack"><div class="map-canvas"><span class="map-placeholder">请先在顶部输入Google Maps JavaScript API Key</span></div></div>
+        </article>
+
+        <article class="panel table-panel">
+          <div class="panel-heading compact">
+            <span>4</span>
+            <div>
+              <h2>解析结果</h2>
+              <p>候选池命中距离阈值后，按厂商优先级取值；无候选池时取最高优先级并标记不可信。</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead id="resultsHead"></thead>
+              <tbody id="resultsBody">
+                <tr>
+                  <td colspan="7">等待解析。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+      <footer class="site-footer">Designed &amp; Developed by <strong>Hoke · 产研中心</strong></footer>
+    </main>
+
+    <div id="providerModal" class="modal-backdrop" hidden>
+      <div class="modal-panel">
+        <div class="modal-heading">
+          <div>
+            <h2>供应商请求配置</h2>
+            <p>参数值支持 {{address}}、{{country}}、{{googleKey}} 占位符。这里同时维护供应商请求和最终取值的对比逻辑。</p>
+          </div>
+          <button id="closeProvidersButton" type="button" class="icon-button" aria-label="关闭供应商请求配置" title="关闭">×</button>
+        </div>
+        <section class="compare-card">
+          <h3>对比逻辑</h3>
+          <div class="compare-grid">
+            <label for="thresholdMeters">相距距离阈值，米<input id="thresholdMeters" type="number" min="1" value="100" /></label>
+            <label for="priorityOrder">厂商优先级<input id="priorityOrder" type="text" value="Google>Microsoft>Amazon" placeholder="Google>Microsoft>Amazon" /></label>
+          </div>
+        </section>
+        <div id="providerList" class="provider-list"></div>
+        <div class="modal-actions">
+          <button id="addProviderButton" type="button" class="secondary-button">新增供应商</button>
+          <button id="saveProvidersButton" type="button">保存配置</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="src/app.js"></script>
+  </body>
+</html>
