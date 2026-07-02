@@ -1,0 +1,9 @@
+{
+  "name": "address-geocoding-comparison-static",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static browser-direct address geocoding comparison tool.",
+  "scripts": {
+    "build": "node build.js"
+  }
+}
