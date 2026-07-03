@@ -8,7 +8,10 @@ const state = {
   lines: [],
   schemes: createDefaultSchemes(),
   providers: createDefaultProviders(),
-  activeProviderId: null
+  activeProviderId: null,
+  lastResults: [],
+  lastProviders: [],
+  lastSchemes: []
 };
 
 const refs = {
@@ -28,6 +31,7 @@ const refs = {
   providerSummary: document.querySelector("#providerSummary"),
   providerButton: document.querySelector("#providerButton"),
   runButton: document.querySelector("#runButton"),
+  exportResultsButton: document.querySelector("#exportResultsButton"),
   resultsHead: document.querySelector("#resultsHead"),
   resultsBody: document.querySelector("#resultsBody"),
   providerModal: document.querySelector("#providerModal"),
@@ -56,6 +60,7 @@ refs.closeProvidersButton.addEventListener("click", closeProviderModal);
 refs.addProviderButton.addEventListener("click", addProvider);
 refs.saveProvidersButton.addEventListener("click", saveProvidersFromModal);
 refs.runButton.addEventListener("click", runComparison);
+refs.exportResultsButton.addEventListener("click", exportResultsToExcel);
 refs.resultsBody.addEventListener("click", handleResultLocate);
 refs.thresholdMeters.addEventListener("input", updateRunState);
 refs.priorityOrder.addEventListener("input", updateProviderSummary);
@@ -634,6 +639,10 @@ async function runComparison() {
   const rows = state.rows.slice(0, limit);
 
   refs.runButton.disabled = true;
+  refs.exportResultsButton.disabled = true;
+  state.lastResults = [];
+  state.lastProviders = providers;
+  state.lastSchemes = schemes;
   refs.resultsBody.innerHTML = `<tr><td colspan="${getResultsColumnCount(providers, schemes)}">正在解析 0 / ${rows.length}</td></tr>`;
   clearMap();
   renderResultsHeader(providers, schemes);
@@ -656,8 +665,84 @@ async function runComparison() {
   }
 
   plotResults(results);
+  state.lastResults = results;
+  state.lastProviders = providers;
+  state.lastSchemes = schemes;
+  refs.exportResultsButton.disabled = !results.length;
   refs.mapStatus.textContent = `解析完成，共 ${results.length} 行。`;
   updateRunState();
+}
+
+function exportResultsToExcel() {
+  if (!state.lastResults.length) {
+    setStatus("暂无可导出的解析结果。", true);
+    return;
+  }
+
+  const providers = state.lastProviders.length ? state.lastProviders : getEnabledProviders();
+  const schemes = state.lastSchemes.length ? state.lastSchemes : getEnabledSchemes();
+  const headers = buildExportHeaders(providers);
+  const rows = buildExportRows(state.lastResults, providers, schemes);
+  const tableRows = [headers, ...rows]
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
+    .join("");
+  const workbook = `<!doctype html><html><head><meta charset="utf-8"></head><body><table>${tableRows}</table></body></html>`;
+  const blob = new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `address-geocoding-results-${new Date().toISOString().slice(0, 10)}.xls`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildExportHeaders(providers) {
+  return [
+    "序号",
+    ...state.headers.map((header) => `原地址-${header}`),
+    "方案名称",
+    "方案拼接地址",
+    ...providers.flatMap((provider) => [
+      `${provider.name}-纬度`,
+      `${provider.name}-经度`,
+      `${provider.name}-返回地址`,
+      `${provider.name}-错误`
+    ]),
+    "最终供应商",
+    "最终纬度",
+    "最终经度",
+    "最终返回地址",
+    "可信度"
+  ];
+}
+
+function buildExportRows(results, providers, schemes) {
+  return results.flatMap((item, index) => schemes.map((scheme) => {
+    const decision = item.decisionsByScheme[scheme.id] || { selected: null, confidence: "不可信" };
+    const selected = decision.selected || {};
+    return [
+      index + 1,
+      ...state.headers.map((header) => item.row[header] || ""),
+      scheme.name,
+      composeAddress(item.row, scheme.fields),
+      ...providers.flatMap((provider) => {
+        const result = item.providers.find((candidate) => candidate.key === makeResultKey(provider.name, scheme.name)) || {};
+        return [
+          Number.isFinite(result.lat) ? result.lat : "",
+          Number.isFinite(result.lng) ? result.lng : "",
+          result.label || "",
+          result.error ? [result.error, result.message].filter(Boolean).join(" / ") : ""
+        ];
+      }),
+      selected.provider || "",
+      Number.isFinite(selected.lat) ? selected.lat : "",
+      Number.isFinite(selected.lng) ? selected.lng : "",
+      selected.label || "",
+      decision.confidence || ""
+    ];
+  }));
 }
 
 function geocodeProvider(provider, scheme, address, row = {}, addressNumber = "") {
