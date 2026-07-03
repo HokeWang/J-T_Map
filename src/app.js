@@ -140,9 +140,9 @@ function createDefaultProviders() {
         { key: "Options.ServerOptions.OutputCasing", value: "Title" },
         { key: "Options.ServerOptions.ReturnVerifiedFieldsOnly", value: "No" }
       ],
-      latPath: "Items.0.Latitude",
-      lngPath: "Items.0.Longitude",
-      labelPath: "Items.0.Label"
+      latPath: "0.Matches.0.Latitude",
+      lngPath: "0.Matches.0.Longitude",
+      labelPath: "0.Matches.0.Address"
     }
   ];
 }
