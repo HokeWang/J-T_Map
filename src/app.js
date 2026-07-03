@@ -118,7 +118,7 @@ function createDefaultProviders() {
     },
     {
       id: makeId(),
-      name: "Addressy",
+      name: "GBG",
       enabled: false,
       method: "POST",
       url: "https://api.addressy.com/Cleansing/International/Batch/v1.20/json6.ws",
@@ -828,7 +828,7 @@ function getProviderColor(name, index) {
   if (normalized.includes("microsoft") || normalized.includes("微软")) {
     return "#c81e2b";
   }
-  if (normalized.includes("addressy") || normalized.includes("loqate")) {
+  if (normalized.includes("gbg") || normalized.includes("addressy") || normalized.includes("loqate")) {
     return "#8b5cf6";
   }
   return palette[index % palette.length];
