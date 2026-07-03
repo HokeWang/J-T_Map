@@ -624,6 +624,43 @@ th {
   background: #ffd1cd;
 }
 
+.provider-tab-bar {
+  position: sticky;
+  top: 54px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 0 -22px;
+  border-bottom: 1px solid var(--line);
+  background: #fff8f6;
+  padding: 12px 22px;
+}
+
+.provider-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.provider-tab {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 900;
+  padding: 0.56rem 0.85rem;
+}
+
+.provider-tab.active {
+  border-color: var(--green);
+  background: var(--green);
+  color: #ffffff;
+}
+
 .provider-list {
   display: grid;
   gap: 16px;
@@ -752,6 +789,7 @@ th {
   .key-row,
   .run-row,
   .param-row,
+  .provider-tab-bar,
   .scheme-card-head,
   .modal-heading,
   .modal-actions,

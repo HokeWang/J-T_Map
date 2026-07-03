@@ -6,7 +6,8 @@ const state = {
   markers: [],
   lines: [],
   schemes: createDefaultSchemes(),
-  providers: createDefaultProviders()
+  providers: createDefaultProviders(),
+  activeProviderId: null
 };
 
 const refs = {
@@ -29,6 +30,7 @@ const refs = {
   resultsHead: document.querySelector("#resultsHead"),
   resultsBody: document.querySelector("#resultsBody"),
   providerModal: document.querySelector("#providerModal"),
+  providerTabs: document.querySelector("#providerTabs"),
   providerList: document.querySelector("#providerList"),
   addProviderButton: document.querySelector("#addProviderButton"),
   saveProvidersButton: document.querySelector("#saveProvidersButton"),
@@ -50,7 +52,7 @@ refs.sampleButton.addEventListener("click", loadSampleData);
 refs.addSchemeButton.addEventListener("click", addScheme);
 refs.providerButton.addEventListener("click", openProviderModal);
 refs.closeProvidersButton.addEventListener("click", closeProviderModal);
-refs.addProviderButton.addEventListener("click", () => addProviderEditor());
+refs.addProviderButton.addEventListener("click", addProvider);
 refs.saveProvidersButton.addEventListener("click", saveProvidersFromModal);
 refs.runButton.addEventListener("click", runComparison);
 refs.resultsBody.addEventListener("click", handleResultLocate);
@@ -456,6 +458,7 @@ function updateRunState() {
 }
 
 function openProviderModal() {
+  ensureActiveProvider();
   renderProviderEditors();
   refs.providerModal.hidden = false;
 }
@@ -465,12 +468,47 @@ function closeProviderModal() {
 }
 
 function renderProviderEditors() {
+  ensureActiveProvider();
+  renderProviderTabs();
   refs.providerList.innerHTML = "";
-  state.providers.forEach((provider, index) => addProviderEditor(provider, index));
+  const provider = state.providers.find((item) => item.id === state.activeProviderId);
+  if (provider) {
+    addProviderEditor(provider);
+  }
 }
 
-function addProviderEditor(provider = null, index = state.providers.length) {
-  const current = provider || {
+function ensureActiveProvider() {
+  if (!state.providers.some((provider) => provider.id === state.activeProviderId)) {
+    state.activeProviderId = state.providers[0]?.id || null;
+  }
+}
+
+function renderProviderTabs() {
+  refs.providerTabs.innerHTML = "";
+  state.providers.forEach((provider) => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = `provider-tab${provider.id === state.activeProviderId ? " active" : ""}`;
+    tab.textContent = provider.name || "未命名供应商";
+    tab.addEventListener("click", () => {
+      syncActiveProviderFromCard();
+      state.activeProviderId = provider.id;
+      renderProviderEditors();
+    });
+    refs.providerTabs.append(tab);
+  });
+}
+
+function addProvider() {
+  syncActiveProviderFromCard();
+  const provider = createBlankProvider(state.providers.length);
+  state.providers.push(provider);
+  state.activeProviderId = provider.id;
+  renderProviderEditors();
+}
+
+function createBlankProvider(index = state.providers.length) {
+  return {
     id: makeId(),
     name: `供应商${index + 1}`,
     enabled: true,
@@ -482,6 +520,10 @@ function addProviderEditor(provider = null, index = state.providers.length) {
     lngPath: "",
     labelPath: ""
   };
+}
+
+function addProviderEditor(provider = createBlankProvider()) {
+  const current = provider;
   const card = document.createElement("section");
   card.className = "provider-card";
   card.dataset.providerId = current.id;
@@ -511,6 +553,12 @@ function addProviderEditor(provider = null, index = state.providers.length) {
       ${renderBodyParamRows(current.bodyParams || [])}
     </div>
   `;
+  card.querySelector(".provider-name").addEventListener("input", () => {
+    const activeTab = refs.providerTabs.querySelector(".provider-tab.active");
+    if (activeTab) {
+      activeTab.textContent = card.querySelector(".provider-name").value.trim() || "未命名供应商";
+    }
+  });
   refs.providerList.append(card);
 }
 
@@ -532,7 +580,30 @@ function renderBodyParamRows(params) {
 }
 
 function saveProvidersFromModal() {
-  state.providers = Array.from(refs.providerList.querySelectorAll(".provider-card")).map((card) => ({
+  syncActiveProviderFromCard();
+  if (!refs.priorityOrder.value.trim()) {
+    refs.priorityOrder.value = state.providers.map((provider) => provider.name).join(">");
+  }
+  closeProviderModal();
+  updateRunState();
+}
+
+function syncActiveProviderFromCard() {
+  const card = refs.providerList.querySelector(".provider-card");
+  if (!card) {
+    return;
+  }
+  const provider = readProviderFromCard(card);
+  const providerIndex = state.providers.findIndex((item) => item.id === provider.id);
+  if (providerIndex >= 0) {
+    state.providers[providerIndex] = provider;
+  } else {
+    state.providers.push(provider);
+  }
+}
+
+function readProviderFromCard(card) {
+  return {
     id: card.dataset.providerId || makeId(),
     enabled: card.querySelector(".provider-enabled").checked,
     name: card.querySelector(".provider-name").value.trim() || "未命名供应商",
@@ -549,12 +620,7 @@ function saveProvidersFromModal() {
       key: row.querySelector(".param-key").value.trim(),
       value: row.querySelector(".param-value").value.trim()
     })).filter((param) => param.key)
-  }));
-  if (!refs.priorityOrder.value.trim()) {
-    refs.priorityOrder.value = state.providers.map((provider) => provider.name).join(">");
-  }
-  closeProviderModal();
-  updateRunState();
+  };
 }
 
 async function runComparison() {
