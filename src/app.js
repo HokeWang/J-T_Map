@@ -115,6 +115,34 @@ function createDefaultProviders() {
       latPath: "ResultItems.0.Position.1",
       lngPath: "ResultItems.0.Position.0",
       labelPath: "ResultItems.0.Title"
+    },
+    {
+      id: makeId(),
+      name: "Addressy",
+      enabled: false,
+      method: "POST",
+      url: "https://api.addressy.com/Cleansing/International/Batch/v1.20/json6.ws",
+      params: [
+        { key: "Key", value: "" }
+      ],
+      bodyParams: [
+        { key: "Key", value: "" },
+        { key: "GeoCode", value: "true" },
+        { key: "Addresses.0.Id", value: "{{id}}" },
+        { key: "Addresses.0.Address", value: "{{Address}}" },
+        { key: "Addresses.0.PostalCode", value: "{{PostalCode}}" },
+        { key: "Addresses.0.Country", value: "{{Country}}" },
+        { key: "Addresses.0.AdministrativeArea", value: "{{AdministrativeArea}}" },
+        { key: "Addresses.0.Locality", value: "{{Locality}}" },
+        { key: "Addresses.0.SubAdministrativeArea", value: "{{SubAdministrativeArea}}" },
+        { key: "Options.Process", value: "Verify" },
+        { key: "Options.ServerOptions.OutputScript", value: "Latn" },
+        { key: "Options.ServerOptions.OutputCasing", value: "Title" },
+        { key: "Options.ServerOptions.ReturnVerifiedFieldsOnly", value: "No" }
+      ],
+      latPath: "Items.0.Latitude",
+      lngPath: "Items.0.Longitude",
+      labelPath: "Items.0.Label"
     }
   ];
 }
@@ -547,7 +575,7 @@ async function runComparison() {
     const row = rows[index];
     const providerResults = await Promise.all(providers.flatMap((provider) => schemes.map((scheme) => {
       const address = composeAddress(row, scheme.fields);
-      return geocodeProvider(provider, scheme, address);
+      return geocodeProvider(provider, scheme, address, row, index + 1);
     })));
     const decisionsByScheme = Object.fromEntries(schemes.map((scheme) => [
       scheme.id,
@@ -564,7 +592,7 @@ async function runComparison() {
   updateRunState();
 }
 
-function geocodeProvider(provider, scheme, address) {
+function geocodeProvider(provider, scheme, address, row = {}, addressNumber = "") {
   if (!address) {
     return Promise.resolve({ provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: "地址为空" });
   }
@@ -584,9 +612,7 @@ function geocodeProvider(provider, scheme, address) {
         labelPath: provider.labelPath
       },
       values: {
-        address,
-        country: refs.countryCode.value.trim().toUpperCase(),
-        googleKey: refs.apiKey.value.trim()
+        ...createPlaceholderValues(row, address, addressNumber)
       }
     })
   })
@@ -802,7 +828,40 @@ function getProviderColor(name, index) {
   if (normalized.includes("microsoft") || normalized.includes("微软")) {
     return "#c81e2b";
   }
+  if (normalized.includes("addressy") || normalized.includes("loqate")) {
+    return "#8b5cf6";
+  }
   return palette[index % palette.length];
+}
+
+function createPlaceholderValues(row, address, addressNumber) {
+  const country = refs.countryCode.value.trim().toUpperCase();
+  const values = {
+    address,
+    country,
+    googleKey: refs.apiKey.value.trim(),
+    id: String(addressNumber || "")
+  };
+  Object.entries(row || {}).forEach(([key, value]) => {
+    values[key] = value ?? "";
+  });
+  values.Address = firstRowValue(row, ["Address", "address", "详细地址", "street", "street_address"]) || address;
+  values.PostalCode = firstRowValue(row, ["PostalCode", "postalCode", "postal_code", "zip", "ZIP", "邮编"]);
+  values.Country = country || firstRowValue(row, ["Country", "country", "国家"]);
+  values.AdministrativeArea = firstRowValue(row, ["AdministrativeArea", "administrativeArea", "province", "state", "省", "州"]);
+  values.Locality = firstRowValue(row, ["Locality", "locality", "city", "市"]);
+  values.SubAdministrativeArea = firstRowValue(row, ["SubAdministrativeArea", "subAdministrativeArea", "district", "county", "区", "县"]);
+  return values;
+}
+
+function firstRowValue(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+  return "";
 }
 
 function makeCoordinateKey(position) {

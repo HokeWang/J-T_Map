@@ -215,7 +215,7 @@ async function handleVendorGeocode(request, response) {
       }
       const value = replacePlaceholders(String(param.value || ""), values);
       if (value) {
-        vendorBody[param.key] = value;
+        setPath(vendorBody, param.key, coerceBodyValue(value));
       }
     }
 
@@ -258,10 +258,43 @@ async function handleVendorGeocode(request, response) {
 }
 
 function replacePlaceholders(value, values) {
-  return value
-    .replaceAll("{{address}}", String(values.address || ""))
-    .replaceAll("{{country}}", String(values.country || ""))
-    .replaceAll("{{googleKey}}", String(values.googleKey || ""));
+  return value.replace(/{{\s*([^}]+)\s*}}/g, (_, key) => String(values[key.trim()] || ""));
+}
+
+function coerceBodyValue(value) {
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return value;
+}
+
+function setPath(target, pathExpression, value) {
+  const parts = String(pathExpression || "").split(".").filter(Boolean);
+  let current = target;
+  parts.forEach((part, index) => {
+    const isLast = index === parts.length - 1;
+    const nextPart = parts[index + 1];
+    const nextValue = /^\d+$/.test(nextPart) ? [] : {};
+    if (Array.isArray(current)) {
+      const arrayIndex = Number(part);
+      if (isLast) {
+        current[arrayIndex] = value;
+      } else {
+        current[arrayIndex] = current[arrayIndex] || nextValue;
+        current = current[arrayIndex];
+      }
+      return;
+    }
+    if (isLast) {
+      current[part] = value;
+      return;
+    }
+    current[part] = current[part] || nextValue;
+    current = current[part];
+  });
 }
 
 function extractVendorErrorMessage(payload) {
