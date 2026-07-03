@@ -116,6 +116,34 @@ function createDefaultProviders() {
       latPath: "ResultItems.0.Position.1",
       lngPath: "ResultItems.0.Position.0",
       labelPath: "ResultItems.0.Title"
+    },
+    {
+      id: makeId(),
+      name: "Addressy",
+      enabled: false,
+      method: "POST",
+      url: "https://api.addressy.com/Cleansing/International/Batch/v1.20/json6.ws",
+      params: [
+        { key: "Key", value: "" }
+      ],
+      bodyParams: [
+        { key: "Key", value: "" },
+        { key: "GeoCode", value: "true" },
+        { key: "Addresses.0.Id", value: "{{id}}" },
+        { key: "Addresses.0.Address", value: "{{Address}}" },
+        { key: "Addresses.0.PostalCode", value: "{{PostalCode}}" },
+        { key: "Addresses.0.Country", value: "{{Country}}" },
+        { key: "Addresses.0.AdministrativeArea", value: "{{AdministrativeArea}}" },
+        { key: "Addresses.0.Locality", value: "{{Locality}}" },
+        { key: "Addresses.0.SubAdministrativeArea", value: "{{SubAdministrativeArea}}" },
+        { key: "Options.Process", value: "Verify" },
+        { key: "Options.ServerOptions.OutputScript", value: "Latn" },
+        { key: "Options.ServerOptions.OutputCasing", value: "Title" },
+        { key: "Options.ServerOptions.ReturnVerifiedFieldsOnly", value: "No" }
+      ],
+      latPath: "Items.0.Latitude",
+      lngPath: "Items.0.Longitude",
+      labelPath: "Items.0.Label"
     }
   ];
 }
@@ -549,7 +577,7 @@ async function runComparison() {
     const row = rows[index];
     const providerResults = await Promise.all(providers.flatMap((provider) => schemes.map((scheme) => {
       const address = composeAddress(row, scheme.fields);
-      return geocodeProvider(provider, scheme, address);
+      return geocodeProvider(provider, scheme, address, row, index + 1);
     })));
     const decisionsByScheme = Object.fromEntries(schemes.map((scheme) => [
       scheme.id,
@@ -566,7 +594,7 @@ async function runComparison() {
   updateRunState();
 }
 
-function geocodeProvider(provider, scheme, address) {
+function geocodeProvider(provider, scheme, address, row = {}, addressNumber = "") {
   if (!address) {
     return Promise.resolve({ provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: "地址为空" });
   }
@@ -575,7 +603,7 @@ function geocodeProvider(provider, scheme, address) {
     return geocodeWithGoogleMaps(provider, scheme, address);
   }
 
-  return geocodeWithDirectFetch(provider, scheme, address);
+  return geocodeWithDirectFetch(provider, scheme, address, row, addressNumber);
 }
 
 function isGoogleProvider(provider) {
@@ -615,12 +643,8 @@ function geocodeWithGoogleMaps(provider, scheme, address) {
     .catch((error) => ({ provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: error.code || "GOOGLE_GEOCODER_FAILED", message: error.message || String(error) }));
 }
 
-function geocodeWithDirectFetch(provider, scheme, address) {
-  const values = {
-    address,
-    country: refs.countryCode.value.trim().toUpperCase(),
-    googleKey: refs.apiKey.value.trim()
-  };
+function geocodeWithDirectFetch(provider, scheme, address, row = {}, addressNumber = "") {
+  const values = createPlaceholderValues(row, address, addressNumber);
 
   let request;
   try {
@@ -676,7 +700,7 @@ function buildDirectVendorRequest(provider, values) {
       }
       const value = replacePlaceholders(String(param.value || ""), values);
       if (value) {
-        body[param.key] = value;
+        setPath(body, param.key, coerceBodyValue(value));
       }
     }
     options.headers = { "Content-Type": "application/json" };
@@ -687,10 +711,43 @@ function buildDirectVendorRequest(provider, values) {
 }
 
 function replacePlaceholders(value, values) {
-  return value
-    .replaceAll("{{address}}", String(values.address || ""))
-    .replaceAll("{{country}}", String(values.country || ""))
-    .replaceAll("{{googleKey}}", String(values.googleKey || ""));
+  return value.replace(/{{\s*([^}]+)\s*}}/g, (_, key) => String(values[key.trim()] || ""));
+}
+
+function coerceBodyValue(value) {
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return value;
+}
+
+function setPath(target, pathExpression, value) {
+  const parts = String(pathExpression || "").split(".").filter(Boolean);
+  let current = target;
+  parts.forEach((part, index) => {
+    const isLast = index === parts.length - 1;
+    const nextPart = parts[index + 1];
+    const nextValue = /^\d+$/.test(nextPart) ? [] : {};
+    if (Array.isArray(current)) {
+      const arrayIndex = Number(part);
+      if (isLast) {
+        current[arrayIndex] = value;
+      } else {
+        current[arrayIndex] = current[arrayIndex] || nextValue;
+        current = current[arrayIndex];
+      }
+      return;
+    }
+    if (isLast) {
+      current[part] = value;
+      return;
+    }
+    current[part] = current[part] || nextValue;
+    current = current[part];
+  });
 }
 
 function extractVendorErrorMessage(payload) {
@@ -914,7 +971,40 @@ function getProviderColor(name, index) {
   if (normalized.includes("microsoft") || normalized.includes("微软")) {
     return "#c81e2b";
   }
+  if (normalized.includes("addressy") || normalized.includes("loqate")) {
+    return "#8b5cf6";
+  }
   return palette[index % palette.length];
+}
+
+function createPlaceholderValues(row, address, addressNumber) {
+  const country = refs.countryCode.value.trim().toUpperCase();
+  const values = {
+    address,
+    country,
+    googleKey: refs.apiKey.value.trim(),
+    id: String(addressNumber || "")
+  };
+  Object.entries(row || {}).forEach(([key, value]) => {
+    values[key] = value ?? "";
+  });
+  values.Address = firstRowValue(row, ["Address", "address", "详细地址", "street", "street_address"]) || address;
+  values.PostalCode = firstRowValue(row, ["PostalCode", "postalCode", "postal_code", "zip", "ZIP", "邮编"]);
+  values.Country = country || firstRowValue(row, ["Country", "country", "国家"]);
+  values.AdministrativeArea = firstRowValue(row, ["AdministrativeArea", "administrativeArea", "province", "state", "省", "州"]);
+  values.Locality = firstRowValue(row, ["Locality", "locality", "city", "市"]);
+  values.SubAdministrativeArea = firstRowValue(row, ["SubAdministrativeArea", "subAdministrativeArea", "district", "county", "区", "县"]);
+  return values;
+}
+
+function firstRowValue(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+  return "";
 }
 
 function makeCoordinateKey(position) {
