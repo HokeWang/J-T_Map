@@ -87,7 +87,8 @@ function createDefaultProviders() {
       bodyParams: [],
       latPath: "results.0.geometry.location.lat",
       lngPath: "results.0.geometry.location.lng",
-      labelPath: "results.0.formatted_address"
+      labelPath: "results.0.formatted_address",
+      postalPath: "results.0.address_components"
     },
     {
       id: makeId(),
@@ -105,7 +106,8 @@ function createDefaultProviders() {
       bodyParams: [],
       latPath: "results.0.position.lat",
       lngPath: "results.0.position.lon",
-      labelPath: "results.0.address.freeformAddress"
+      labelPath: "results.0.address.freeformAddress",
+      postalPath: "results.0.address.postalCode"
     },
     {
       id: makeId(),
@@ -122,7 +124,8 @@ function createDefaultProviders() {
       ],
       latPath: "ResultItems.0.Position.1",
       lngPath: "ResultItems.0.Position.0",
-      labelPath: "ResultItems.0.Title"
+      labelPath: "ResultItems.0.Title",
+      postalPath: "ResultItems.0.Address.PostalCode"
     },
     {
       id: makeId(),
@@ -150,7 +153,8 @@ function createDefaultProviders() {
       ],
       latPath: "0.Matches.0.Latitude",
       lngPath: "0.Matches.0.Longitude",
-      labelPath: "0.Matches.0.Address"
+      labelPath: "0.Matches.0.Address",
+      postalPath: "0.Matches.0.PostalCode"
     }
   ];
 }
@@ -525,7 +529,8 @@ function createBlankProvider(index = state.providers.length) {
     bodyParams: [],
     latPath: "",
     lngPath: "",
-    labelPath: ""
+    labelPath: "",
+    postalPath: ""
   };
 }
 
@@ -550,6 +555,7 @@ function addProviderEditor(provider = createBlankProvider()) {
       <label>纬度 JSON 路径<input class="provider-lat" type="text" value="${escapeAttribute(current.latPath)}" placeholder="results.0.geometry.location.lat"></label>
       <label>经度 JSON 路径<input class="provider-lng" type="text" value="${escapeAttribute(current.lngPath)}" placeholder="results.0.geometry.location.lng"></label>
       <label>地址标签路径<input class="provider-label" type="text" value="${escapeAttribute(current.labelPath)}" placeholder="results.0.formatted_address"></label>
+      <label>邮编 JSON 路径<input class="provider-postal" type="text" value="${escapeAttribute(current.postalPath || "")}" placeholder="results.0.address.postalCode"></label>
     </div>
     <div class="param-table query-param-table">
       <div class="param-row param-title"><span>Query Key</span><span>Value</span></div>
@@ -619,6 +625,7 @@ function readProviderFromCard(card) {
     latPath: card.querySelector(".provider-lat").value.trim(),
     lngPath: card.querySelector(".provider-lng").value.trim(),
     labelPath: card.querySelector(".provider-label").value.trim(),
+    postalPath: card.querySelector(".provider-postal").value.trim(),
     params: Array.from(card.querySelectorAll(".query-param-table .param-row:not(.param-title)")).map((row) => ({
       key: row.querySelector(".param-key").value.trim(),
       value: row.querySelector(".param-value").value.trim()
@@ -707,12 +714,14 @@ function buildExportHeaders(providers) {
     ...providers.flatMap((provider) => [
       `${provider.name}-纬度`,
       `${provider.name}-经度`,
+      `${provider.name}-邮编`,
       `${provider.name}-返回地址`,
       `${provider.name}-错误`
     ]),
     "最终供应商",
     "最终纬度",
     "最终经度",
+    "最终邮编",
     "最终返回地址",
     "可信度"
   ];
@@ -732,6 +741,7 @@ function buildExportRows(results, providers, schemes) {
         return [
           Number.isFinite(result.lat) ? result.lat : "",
           Number.isFinite(result.lng) ? result.lng : "",
+          result.postalCode || "",
           result.label || "",
           result.error ? [result.error, result.message].filter(Boolean).join(" / ") : ""
         ];
@@ -739,6 +749,7 @@ function buildExportRows(results, providers, schemes) {
       selected.provider || "",
       Number.isFinite(selected.lat) ? selected.lat : "",
       Number.isFinite(selected.lng) ? selected.lng : "",
+      selected.postalCode || "",
       selected.label || "",
       decision.confidence || ""
     ];
@@ -788,7 +799,8 @@ function geocodeWithGoogleMaps(provider, scheme, address) {
         address,
         lat: location.lat(),
         lng: location.lng(),
-        label: firstResult.formatted_address || ""
+        label: firstResult.formatted_address || "",
+        postalCode: extractPostalCode(firstResult, provider.postalPath)
       };
     })
     .catch((error) => ({ provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: error.code || "GOOGLE_GEOCODER_FAILED", message: error.message || String(error) }));
@@ -814,12 +826,13 @@ function geocodeWithDirectFetch(provider, scheme, address, row = {}, addressNumb
       const lat = Number(readPath(payload, provider.latPath));
       const lng = Number(readPath(payload, provider.lngPath));
       const label = provider.labelPath ? String(readPath(payload, provider.labelPath) || "") : "";
+      const postalCode = extractPostalCode(payload, provider.postalPath);
 
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
         return { provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: "NO_USABLE_LOCATION", message: "配置的纬度/经度 JSON 路径没有返回数字。" };
       }
 
-      return { provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, lat, lng, label };
+      return { provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, lat, lng, label, postalCode };
     })
     .catch((error) => ({ provider: provider.name, scheme: scheme.name, schemeId: scheme.id, key: makeResultKey(provider.name, scheme.name), address, error: "DIRECT_REQUEST_FAILED", message: `${error.message}。如果浏览器提示 CORS，这是供应商接口不允许网页直连。` }));
 }
@@ -920,6 +933,18 @@ function readPath(source, pathExpression) {
   }, source);
 }
 
+function extractPostalCode(payload, postalPath = "") {
+  let value = postalPath ? readPath(payload, postalPath) : "";
+  if ((value === undefined || value === null) && postalPath.startsWith("results.0.")) {
+    value = readPath(payload, postalPath.replace(/^results\.0\./, ""));
+  }
+  if (Array.isArray(value)) {
+    const component = value.find((item) => Array.isArray(item.types) && item.types.includes("postal_code"));
+    return String(component?.long_name || component?.short_name || "");
+  }
+  return value === undefined || value === null ? "" : String(value);
+}
+
 function makeResultKey(providerName, schemeName) {
   return `${providerName} / ${schemeName}`;
 }
@@ -1007,7 +1032,7 @@ function formatProviderResult(result) {
   if (!result || result.error) {
     return `<td><span class="error-text">${escapeHtml(result?.error || "失败")}${result?.message ? `<br>${escapeHtml(result.message)}` : ""}</span></td>`;
   }
-  return `<td>${formatCoordinateWithLocate(result)}${escapeHtml(result.label || "")}</td>`;
+  return `<td>${formatCoordinateWithLocate(result)}${result.postalCode ? `<div class="result-postal">邮编: ${escapeHtml(result.postalCode)}</div>` : ""}${escapeHtml(result.label || "")}</td>`;
 }
 
 function formatSelectedResult(decision) {
@@ -1017,6 +1042,7 @@ function formatSelectedResult(decision) {
   return `
     <span class="selected-provider">${escapeHtml(decision.selected.provider)}</span>
     ${formatCoordinateWithLocate(decision.selected)}
+    ${decision.selected.postalCode ? `<div class="result-postal">邮编: ${escapeHtml(decision.selected.postalCode)}</div>` : ""}
     <span class="quality ${decision.confidence === "不可信" ? "warning-quality" : ""}">${decision.confidence}</span>
   `;
 }
