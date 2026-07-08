@@ -242,6 +242,7 @@ async function handleVendorGeocode(request, response) {
     const lat = Number(readPath(vendorResponse, provider.latPath));
     const lng = Number(readPath(vendorResponse, provider.lngPath));
     const label = provider.labelPath ? String(readPath(vendorResponse, provider.labelPath) || "") : "";
+    const postalCode = extractPostalCode(vendorResponse, provider.postalPath);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       sendJson(response, 200, {
@@ -251,7 +252,7 @@ async function handleVendorGeocode(request, response) {
       return;
     }
 
-    sendJson(response, 200, { lat, lng, label });
+    sendJson(response, 200, { lat, lng, label, postalCode });
   } catch (error) {
     sendJson(response, 200, { error: "VENDOR_PROXY_ERROR", message: error.message });
   }
@@ -315,4 +316,16 @@ function readPath(source, pathExpression) {
     }
     return current[part];
   }, source);
+}
+
+function extractPostalCode(payload, postalPath = "") {
+  let value = postalPath ? readPath(payload, postalPath) : "";
+  if ((value === undefined || value === null) && postalPath.startsWith("results.0.")) {
+    value = readPath(payload, postalPath.replace(/^results\.0\./, ""));
+  }
+  if (Array.isArray(value)) {
+    const component = value.find((item) => Array.isArray(item.types) && item.types.includes("postal_code"));
+    return String(component?.long_name || component?.short_name || "");
+  }
+  return value === undefined || value === null ? "" : String(value);
 }
